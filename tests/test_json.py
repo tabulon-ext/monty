@@ -49,9 +49,46 @@ class GoodNestedMSONClass(MSONable):
         self.kwargs = kwargs
 
 
+class MethodSerializationClass(MSONable):
+    def __init__(self, a):
+        self.a = a
+
+    def method(self):
+        pass
+
+    @staticmethod
+    def staticmethod(self):
+        pass
+
+    @classmethod
+    def classmethod(cls):
+        pass
+
+    def __call__(self, b):
+        # override call for instances
+        return self.__class__(b)
+
+    class NestedClass:
+        def inner_method(self):
+            pass
+
+
+class MethodNonSerializationClass:
+    def __init__(self, a):
+        self.a = a
+
+    def method(self):
+        pass
+
+
+def my_callable(a, b):
+    return a + b
+
+
 class EnumTest(MSONable, Enum):
     a = 1
     b = 2
+
 
 
 class MSONableTest(unittest.TestCase):
@@ -190,6 +227,20 @@ class MSONableTest(unittest.TestCase):
         self.assertEqual(e_new.name, e.name)
         self.assertEqual(e_new.value, e.value)
 
+        d = {"123": EnumTest.a}
+        f = jsanitize(d)
+        self.assertEqual(f["123"], "EnumTest.a")
+
+        f = jsanitize(d, strict=True)
+        self.assertEqual(f["123"]["@module"], "tests.test_json")
+        self.assertEqual(f["123"]["@class"], "EnumTest")
+        self.assertEqual(f["123"]["value"], 1)
+
+        f = jsanitize(d, strict=True, enum_values=True)
+        self.assertEqual(f["123"], 1)
+
+        f = jsanitize(d, enum_values=True)
+        self.assertEqual(f["123"], 1)
 
 class JsonTest(unittest.TestCase):
     def test_as_from_dict(self):
@@ -227,6 +278,7 @@ class JsonTest(unittest.TestCase):
 
     def test_uuid(self):
         from uuid import uuid4, UUID
+
         uuid = uuid4()
         jsonstr = json.dumps(uuid, cls=MontyEncoder)
         d = json.loads(jsonstr, cls=MontyDecoder)
@@ -276,6 +328,64 @@ class JsonTest(unittest.TestCase):
         self.assertEqual(type(x), np.ndarray)
         self.assertEqual(x.dtype, "complex64")
 
+        x = {"energies": [np.float64(1234.5)]}
+        d = jsanitize(x, strict=True)
+        assert type(d["energies"][0]) == float
+
+    def test_callable(self):
+        instance = MethodSerializationClass(a=1)
+        for function in [
+            # builtins
+            str,
+            list,
+            sum,
+            open,
+            # functions
+            os.path.join,
+            my_callable,
+            # unbound methods
+            MethodSerializationClass.NestedClass.inner_method,
+            MethodSerializationClass.staticmethod,
+            instance.staticmethod,
+            # methods bound to classes
+            MethodSerializationClass.classmethod,
+            instance.classmethod,
+            # classes
+            MethodSerializationClass,
+            Enum,
+        ]:
+            self.assertRaises(TypeError, json.dumps, function)
+            djson = json.dumps(function, cls=MontyEncoder)
+            d = json.loads(djson)
+            self.assertTrue("@callable" in d)
+            self.assertTrue("@module" in d)
+            x = json.loads(djson, cls=MontyDecoder)
+            self.assertEqual(x, function)
+
+        # test method bound to instance
+        for function in [instance.method]:
+            self.assertRaises(TypeError, json.dumps, function)
+            djson = json.dumps(function, cls=MontyEncoder)
+            d = json.loads(djson)
+            self.assertTrue("@callable" in d)
+            self.assertTrue("@module" in d)
+            x = json.loads(djson, cls=MontyDecoder)
+
+            # can't just check functions are equal as the instance the function is bound
+            # to will be different. Instead, we check that the serialized instance
+            # is the same, and that the function qualname is the same
+            self.assertEqual(x.__qualname__, function.__qualname__)
+            self.assertEqual(x.__self__.as_dict(), function.__self__.as_dict())
+
+        # test method bound to object that is not serializable
+        for function in [MethodNonSerializationClass(1).method]:
+            self.assertRaises(TypeError, json.dumps, function, cls=MontyEncoder)
+
+        # test that callable MSONable objects still get serialized as the objects
+        # rather than as a callable
+        djson = json.dumps(instance, cls=MontyEncoder)
+        self.assertTrue("@class" in djson)
+
     def test_objectid(self):
         oid = ObjectId("562e8301218dcbbc3d7d91ce")
         self.assertRaises(TypeError, json.dumps, oid)
@@ -318,6 +428,57 @@ class JsonTest(unittest.TestCase):
         self.assertEqual(clean["a"], bytes(rnd_bin))
         self.assertIsInstance(clean["a"], bytes)
 
+        # test jsanitizing callables (including classes)
+        instance = MethodSerializationClass(a=1)
+        for function in [
+            # builtins
+            str,
+            list,
+            sum,
+            open,
+            # functions
+            os.path.join,
+            my_callable,
+            # unbound methods
+            MethodSerializationClass.NestedClass.inner_method,
+            MethodSerializationClass.staticmethod,
+            instance.staticmethod,
+            # methods bound to classes
+            MethodSerializationClass.classmethod,
+            instance.classmethod,
+            # classes
+            MethodSerializationClass,
+            Enum,
+        ]:
+            d = {"f": function}
+            clean = jsanitize(d)
+            self.assertTrue("@module" in clean["f"])
+            self.assertTrue("@callable" in clean["f"])
+
+        # test method bound to instance
+        for function in [instance.method]:
+            d = {"f": function}
+            clean = jsanitize(d)
+            self.assertTrue("@module" in clean["f"])
+            self.assertTrue("@callable" in clean["f"])
+            self.assertTrue(clean["f"].get("@bound", None) is not None)
+            self.assertTrue("@class" in clean["f"]["@bound"])
+
+        # test method bound to object that is not serializable
+        for function in [MethodNonSerializationClass(1).method]:
+            d = {"f": function}
+            clean = jsanitize(d)
+            self.assertTrue(isinstance(clean["f"], str))
+
+            # test that strict checking gives an error
+            self.assertRaises(AttributeError, jsanitize, d, strict=True)
+
+        # test that callable MSONable objects still get serialized as the objects
+        # rather than as a callable
+        d = {"c": instance}
+        clean = jsanitize(d, strict=True)
+        self.assertTrue("@class" in clean["c"])
+
     def test_redirect(self):
         MSONable.REDIRECT["tests.test_json"] = {"test_class": {"@class": "GoodMSONClass", "@module": "tests.test_json"}}
 
@@ -340,15 +501,13 @@ class JsonTest(unittest.TestCase):
         data = _load_redirect(os.path.join(test_dir, "test_settings.yaml"))
         self.assertEqual(
             data,
-            {
-                "old_module": {
-                    "old_class": {"@class": "new_class", "@module": "new_module"}
-                }
-            },
+            {"old_module": {"old_class": {"@class": "new_class", "@module": "new_module"}}},
         )
 
     def test_pydantic_integrations(self):
         from pydantic import BaseModel
+
+        global ModelWithMSONable  # allow model to be deserialized in test
 
         class ModelWithMSONable(BaseModel):
             a: GoodMSONClass
@@ -375,6 +534,26 @@ class JsonTest(unittest.TestCase):
             "required": ["a"],
         }
 
+        d = jsanitize(test_object, strict=True)
+        assert d == {
+            'a': {
+                '@module': 'tests.test_json',
+                '@class': 'GoodMSONClass',
+                '@version': '0.1',
+                'a': 1,
+                'b': 1,
+                'c': 1,
+                'd': 1,
+                'values': []
+            },
+            '@module': 'tests.test_json',
+            '@class': 'ModelWithMSONable',
+            '@version': '0.1'
+        }
+        obj = MontyDecoder().process_decoded(d)
+        assert isinstance(obj, BaseModel)
+        assert isinstance(obj.a, GoodMSONClass)
+        assert obj.a.b == 1
 
 
 if __name__ == "__main__":

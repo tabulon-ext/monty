@@ -150,17 +150,17 @@ def get_ncpus():
 
     # BSD
     try:
-        sysctl = subprocess.Popen(["sysctl", "-n", "hw.ncpu"], stdout=subprocess.PIPE)
-        scstdout = sysctl.communicate()[0]
-        res = int(scstdout)
-        if res > 0:
-            return res
+        with subprocess.Popen(["sysctl", "-n", "hw.ncpu"], stdout=subprocess.PIPE) as sysctl:
+            scstdout = sysctl.communicate()[0]
+            res = int(scstdout)
+            if res > 0:
+                return res
     except (OSError, ValueError):
         pass
 
     # Linux
     try:
-        res = open("/proc/cpuinfo").read().count("processor\t:")
+        res = open("/proc/cpuinfo").read().count("processor\t:")  # pylint: disable=R1732
         if res > 0:
             return res
     except IOError:
@@ -182,10 +182,11 @@ def get_ncpus():
     # Other UNIXes (heuristic)
     try:
         try:
-            dmesg = open("/var/run/dmesg.boot").read()
+            with open("/var/run/dmesg.boot") as f:
+                dmesg = f.read()
         except IOError:
-            dmesg_process = subprocess.Popen(["dmesg"], stdout=subprocess.PIPE)
-            dmesg = dmesg_process.communicate()[0]
+            with subprocess.Popen(["dmesg"], stdout=subprocess.PIPE) as dmesg_process:
+                dmesg = dmesg_process.communicate()[0]
 
         res = 0
         while "\ncpu" + str(res) + ":" in dmesg:

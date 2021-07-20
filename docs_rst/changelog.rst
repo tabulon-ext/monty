@@ -1,6 +1,19 @@
 Change log
 ==========
 
+v2021.7.8
+---------
+* Support the specification of `fmt` keyword arg in monty.serialization
+  loadfn and dumpfn.
+
+v2021.6.10
+----------
+* Expanded support for built-in functions, numpy types, etc. in MSON serialization (@utf).
+
+v2021.5.9
+---------
+* Drop py3.5 support.
+
 v2021.3.3
 ---------
 * pydantic support (@shyamd)
