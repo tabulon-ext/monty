@@ -1,21 +1,22 @@
-#!/usr/bin/env python
+"""Deployment file to facilitate releases of monty."""
 
-"""
-Deployment file to facilitate releases of monty.
-"""
+from __future__ import annotations
 
-
+import datetime
 import glob
-import requests
 import json
 import os
-import datetime
 import re
+from typing import TYPE_CHECKING
 
+import requests
 from invoke import task
-from monty.os import cd
-from monty import __version__ as ver
 
+from monty import __version__ as ver
+from monty.os import cd
+
+if TYPE_CHECKING:
+    from invoke import Context
 
 __author__ = "Shyue Ping Ong"
 __copyright__ = "Copyright 2012, The Materials Project"
@@ -28,49 +29,61 @@ NEW_VER = datetime.datetime.today().strftime("%Y.%-m.%-d")
 
 
 @task
-def make_doc(ctx):
-    with cd("docs_rst"):
-        ctx.run("sphinx-apidoc --separate -d 6 -o . -f ../monty")
-        for f in glob.glob("*.rst"):
-            if f.startswith("monty") and f.endswith("rst"):
-                newoutput = []
-                suboutput = []
-                subpackage = False
-                with open(f, "r") as fid:
-                    for line in fid:
-                        clean = line.strip()
-                        if clean == "Subpackages":
-                            subpackage = True
-                        if not subpackage and not clean.endswith("tests"):
-                            newoutput.append(line)
-                        else:
-                            if not clean.endswith("tests"):
-                                suboutput.append(line)
-                            if clean.startswith("monty") and not clean.endswith("tests"):
-                                newoutput.extend(suboutput)
-                                subpackage = False
-                                suboutput = []
-
-                with open(f, "w") as fid:
-                    fid.write("".join(newoutput))
-        ctx.run("make html")
-
-        # ctx.run("cp _static/* ../docs/html/_static")
-
+def make_doc(ctx: Context) -> None:
     with cd("docs"):
-        ctx.run("cp -r html/* .")
-        ctx.run("rm -r html")
-        ctx.run("rm -r doctrees")
-        ctx.run("rm -r _sources")
+        ctx.run("rm monty.*.rst", warn=True)
+        ctx.run("sphinx-apidoc --separate -P -M -d 6 -o . -f ../src/monty")
+        # ctx.run("rm monty*.html", warn=True)
+        # ctx.run("sphinx-build -b html . ../docs")  # HTML building.
+        ctx.run("sphinx-build -M markdown . .")
+        ctx.run("rm *.rst", warn=True)
+        ctx.run("cp markdown/monty*.md .")
+        for fn in glob.glob("monty*.md"):
+            with open(fn, encoding="utf-8") as f:
+                lines = [line.rstrip() for line in f if "Submodules" not in line]
+            if fn == "monty.md":
+                preamble = [
+                    "---",
+                    "layout: default",
+                    "title: API Documentation",
+                    "nav_order: 5",
+                    "---",
+                    "",
+                ]
+            else:
+                preamble = [
+                    "---",
+                    "layout: default",
+                    f"title: {fn}",
+                    "nav_exclude: true",
+                    "---",
+                    "",
+                ]
+            with open(fn, "w", encoding="utf-8") as f:
+                f.write("\n".join(preamble + lines))
 
-        # This makes sure monty.org works to redirect to the Gihub page
-        # ctx.run("echo \"monty.org\" > CNAME")
-        # Avoid the use of jekyll so that _dir works as intended.
-        ctx.run("touch .nojekyll")
+        ctx.run("rm -r markdown", warn=True)
+        ctx.run("cp ../*.md .")
+        ctx.run("mv README.md index.md")
+        ctx.run("rm -rf *.orig doctrees", warn=True)
+
+        with open("index.md", encoding="utf-8") as f:
+            contents = f.read()
+        with open("index.md", "w", encoding="utf-8") as f:
+            contents = re.sub(
+                r"\n## Official Documentation[^#]*",
+                "{: .no_toc }\n\n## Table of contents\n{: .no_toc .text-delta }\n* TOC\n{:toc}\n\n",
+                contents,
+            )
+            contents = (
+                "---\nlayout: default\ntitle: Home\nnav_order: 1\n---\n\n" + contents
+            )
+
+            f.write(contents)
 
 
 @task
-def update_doc(ctx):
+def update_doc(ctx: Context) -> None:
     ctx.run("git pull", warn=True)
     make_doc(ctx)
     ctx.run("git add .", warn=True)
@@ -79,28 +92,26 @@ def update_doc(ctx):
 
 
 @task
-def test(ctx):
+def test(ctx: Context) -> None:
     ctx.run("pytest")
 
 
 @task
-def setver(ctx):
-    ctx.run('sed s/version=.*,/version=\\"{}\\",/ setup.py > newsetup'.format(ver))
+def setver(ctx: Context) -> None:
+    ctx.run(f'sed s/version=.*,/version=\\"{ver}\\",/ setup.py > newsetup')
     ctx.run("mv newsetup setup.py")
 
 
 @task
-def release_github(ctx):
-    with open("docs_rst/changelog.rst") as f:
+def release_github(ctx: Context) -> None:
+    with open("docs/changelog.md", encoding="utf-8") as f:
         contents = f.read()
-    toks = re.split(r"\-+", contents)
+    toks = re.split("##", contents)
     desc = toks[1].strip()
-    toks = desc.split("\n")
-    desc = "\n".join(toks[:-1]).strip()
     payload = {
-        "tag_name": "v" + NEW_VER,
+        "tag_name": f"v{NEW_VER}",
         "target_commitish": "master",
-        "name": "v" + NEW_VER,
+        "name": f"v{NEW_VER}",
         "body": desc,
         "draft": False,
         "prerelease": False,
@@ -115,32 +126,30 @@ def release_github(ctx):
 
 
 @task
-def commit(ctx):
-    ctx.run('git commit -a -m "v%s release"' % NEW_VER, warn=True)
+def commit(ctx: Context) -> None:
+    ctx.run(f'git commit -a -m "v{NEW_VER} release"', warn=True)
     ctx.run("git push", warn=True)
 
 
 @task
-def set_ver(ctx):
-    with open("monty/__init__.py", "rt") as f:
+def set_ver(ctx: Context, version: str = NEW_VER) -> None:
+    with open("pyproject.toml", encoding="utf-8") as f:
         contents = f.read()
-        contents = re.sub(r"__version__ = .*\n", '__version__ = "%s"\n' % NEW_VER, contents)
+        contents = re.sub(r"version = ([\.\d\"]+)", f'version = "{version}"', contents)
 
-    with open("monty/__init__.py", "wt") as f:
-        f.write(contents)
-
-    with open("setup.py", "rt") as f:
-        contents = f.read()
-        contents = re.sub(r"version=([^,]+),", 'version="%s",' % NEW_VER, contents)
-
-    with open("setup.py", "wt") as f:
+    with open("pyproject.toml", "w", encoding="utf-8") as f:
         f.write(contents)
 
 
 @task
-def release(ctx):
-    set_ver(ctx)
-    test(ctx)
-    update_doc(ctx)
+def release(ctx: Context, notest: bool = False, version: str = NEW_VER) -> None:
+    set_ver(ctx, version)
+    if not notest:
+        test(ctx)
+    # update_doc(ctx)
     commit(ctx)
     release_github(ctx)
+    ctx.run("python -m build", warn=True)
+    ctx.run("python -m build --wheel", warn=True)
+    ctx.run("twine upload --skip-existing dist/*.whl", warn=True)
+    ctx.run("twine upload --skip-existing dist/*.tar.gz", warn=True)

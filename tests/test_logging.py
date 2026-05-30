@@ -1,7 +1,8 @@
-import unittest
-from io import StringIO
+from __future__ import annotations
 
 import logging
+from io import StringIO
+
 from monty.logging import logged
 
 
@@ -10,12 +11,7 @@ def add(a, b):
     return a + b
 
 
-class FuncTest(unittest.TestCase):
-    def test_logged(self):
-        s = StringIO()
-        logging.basicConfig(level=logging.DEBUG, stream=s)
-        add(1, 2)
-
-
-if __name__ == "__main__":
-    unittest.main()
+def test_logged():
+    s = StringIO()
+    logging.basicConfig(level=logging.DEBUG, stream=s)
+    add(1, 2)

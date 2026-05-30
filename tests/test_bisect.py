@@ -1,18 +1,13 @@
-import unittest
+from __future__ import annotations
 
-from monty.bisect import index, find_lt, find_le, find_gt, find_ge
-
-
-class FuncTestCase(unittest.TestCase):
-    def test_funcs(self):
-        l = [0, 1, 2, 3, 4]
-        self.assertEqual(index(l, 1), 1)
-        self.assertEqual(find_lt(l, 1), 0)
-        self.assertEqual(find_gt(l, 1), 2)
-        self.assertEqual(find_le(l, 1), 1)
-        self.assertEqual(find_ge(l, 2), 2)
-        # self.assertEqual(index([0, 1, 1.5, 2], 1.501, atol=0.1), 4)
+from monty.bisect import find_ge, find_gt, find_le, find_lt, index
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_funcs():
+    line = [0, 1, 2, 3, 4]
+    assert index(line, 1) == 1
+    assert find_lt(line, 1) == 0
+    assert find_gt(line, 1) == 2
+    assert find_le(line, 1) == 1
+    assert find_ge(line, 2) == 2
+    # assert index([0, 1, 1.5, 2], 1.501, atol=0.1) == 4

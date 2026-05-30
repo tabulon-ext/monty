@@ -1,67 +1,98 @@
-import unittest
+from __future__ import annotations
+
 import os
-import platform
+from typing import TYPE_CHECKING
 
-from monty.os.path import which, zpath, find_exts
+import pytest
+
 from monty.os import cd, makedirs_p
+from monty.os.path import find_exts, zpath
 
-test_dir = os.path.join(os.path.dirname(__file__), "test_files")
+if TYPE_CHECKING:
+    from pathlib import Path
+
+MODULE_DIR = os.path.dirname(__file__)
+TEST_DIR = os.path.join(MODULE_DIR, "test_files")
 
 
-class PathTest(unittest.TestCase):
-    @unittest.skipIf(platform.system() == "Windows", "Skip on windows")
-    def test_which(self):
-        try:
-            py = which("python3")
-            self.assertEqual(os.path.basename(py), "python3")
-        except:
-            py = which("python")
-            self.assertEqual(os.path.basename(py), "python")
-        self.assertEqual("/usr/bin/find", which("/usr/bin/find"))
-        self.assertIs(which("non_existent_exe"), None)
+class TestPath:
+    def test_zpath_str(self, tmp_path: Path):
+        tmp_gz = tmp_path / "tmp.gz"
+        tmp_gz.touch()
+        ret_path = zpath(str(tmp_gz))
+        assert isinstance(ret_path, str)
+        assert ret_path == str(tmp_gz)
 
-    def test_zpath(self):
-        fullzpath = zpath(os.path.join(test_dir, "myfile_gz"))
-        self.assertEqual(os.path.join(test_dir, "myfile_gz.gz"), fullzpath)
+        tmp_not_bz2 = tmp_path / "tmp_not_bz2"
+        tmp_not_bz2.touch()
+
+        ret_path = zpath(f"{tmp_not_bz2}.bz2")
+        assert ret_path == str(tmp_not_bz2)
+        assert isinstance(ret_path, str)
+
+    def test_zpath_path(self, tmp_path: Path):
+        # Test with Path input
+        tmp_gz = tmp_path / "tmp.gz"
+        tmp_gz.touch()
+        ret_path = zpath(tmp_gz)
+        assert ret_path == str(tmp_gz)
+        assert isinstance(ret_path, str)
+
+    def test_zpath_multiple_extensions(self, tmp_path: Path):
+        exts = ["", ".gz", ".GZ", ".bz2", ".BZ2", ".z", ".Z"]
+        for ext in exts:
+            tmp_file = tmp_path / f"tmp{ext}"
+            # create files with all supported compression extensions
+            tmp_file.touch()
+
+        # zpath should return the file without compression extension
+        ret_path = zpath(tmp_path / "tmp")
+        assert ret_path == str(tmp_path / "tmp")
+        assert isinstance(ret_path, str)
+
+        (tmp_path / "tmp").unlink()  # Remove the uncompressed file
+        ret_path = zpath(tmp_path / "tmp")
+        assert ret_path == str(tmp_path / "tmp.gz")  # should find .gz first now
+
+    def test_zpath_nonexistent_file(self, tmp_path: Path):
+        # should return path as is for non-existent file
+        nonexistent = tmp_path / "nonexistent.txt"
+        ret_path = zpath(nonexistent)
+        assert ret_path == str(nonexistent)
+        ret_path = zpath(f"{nonexistent}.bz2")
+        assert ret_path == str(nonexistent)
 
     def test_find_exts(self):
-        self.assertTrue(len(find_exts(os.path.dirname(__file__), "py")) >= 18)
-        self.assertEqual(len(find_exts(os.path.dirname(__file__), "bz2")), 2)
-        self.assertEqual(
-            len(find_exts(os.path.dirname(__file__), "bz2", exclude_dirs="test_files")),
-            0,
-        )
-        self.assertEqual(
-            len(find_exts(os.path.dirname(__file__), "bz2", include_dirs="test_files")),
-            2,
-        )
+        assert len(find_exts(MODULE_DIR, "py")) >= 18
+        assert len(find_exts(MODULE_DIR, "bz2")) == 2
+        n_bz2_excl_tests = len(find_exts(MODULE_DIR, "bz2", exclude_dirs="test_files"))
+        assert n_bz2_excl_tests == 0
+        n_bz2_w_tests = find_exts(MODULE_DIR, "bz2", include_dirs="test_files")
+        assert len(n_bz2_w_tests) == 2
 
 
-class CdTest(unittest.TestCase):
+class TestCd:
     def test_cd(self):
-        with cd(test_dir):
-            self.assertTrue(os.path.exists("empty_file.txt"))
-        self.assertFalse(os.path.exists("empty_file.txt"))
+        with cd(TEST_DIR):
+            assert os.path.exists("empty_file.txt")
+        assert not os.path.exists("empty_file.txt")
 
     def test_cd_exception(self):
-        with cd(test_dir):
-            self.assertTrue(os.path.exists("empty_file.txt"))
-        self.assertFalse(os.path.exists("empty_file.txt"))
+        with cd(TEST_DIR):
+            assert os.path.exists("empty_file.txt")
+        assert not os.path.exists("empty_file.txt")
 
 
-class Makedirs_pTest(unittest.TestCase):
-    def setUp(self):
-        self.test_dir_path = os.path.join(test_dir, "test_dir")
+class TestMakedirs_p:
+    def setup_method(self):
+        self.test_dir_path = os.path.join(TEST_DIR, "test_dir")
 
     def test_makedirs_p(self):
         makedirs_p(self.test_dir_path)
-        self.assertTrue(os.path.exists(self.test_dir_path))
+        assert os.path.exists(self.test_dir_path)
         makedirs_p(self.test_dir_path)
-        self.assertRaises(OSError, makedirs_p, os.path.join(test_dir, "myfile_txt"))
+        with pytest.raises(OSError, match="exists"):
+            makedirs_p(os.path.join(TEST_DIR, "3000_lines.txt"))
 
-    def tearDown(self):
+    def teardown_method(self):
         os.rmdir(self.test_dir_path)
-
-
-if __name__ == "__main__":
-    unittest.main()

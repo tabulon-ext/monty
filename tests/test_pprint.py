@@ -1,15 +1,15 @@
-from monty.pprint import pprint_table, draw_tree
+from __future__ import annotations
 
-import unittest
+from monty.pprint import draw_tree, pprint_table
 
 
-class PprintTableTest(unittest.TestCase):
+class TestPprintTable:
     def test_print(self):
         table = [["one", "two"], ["1", "2"]]
         pprint_table(table)
 
 
-class DrawTreeTest(unittest.TestCase):
+class TestDrawTree:
     def test_draw_tree(self):
         class Node:
             def __init__(self, name, children):
@@ -34,8 +34,4 @@ class DrawTreeTest(unittest.TestCase):
             ],
         )
 
-        print(draw_tree(root))
-
-
-if __name__ == "__main__":
-    unittest.main()
+        assert draw_tree(root)

@@ -1,8 +1,5 @@
-"""
-TODO: Modify unittest doc.
-"""
+from __future__ import annotations
 
-import unittest
 import os
 import sys
 
@@ -15,10 +12,10 @@ from monty.termcolor import (
 )
 
 
-class FuncTest(unittest.TestCase):
+class TestFunc:
     def test_remove_non_ascii(self):
         enable(True)
-        print("Current terminal type: %s" % os.getenv("TERM"))
+        print("Current terminal type: {}".format(os.getenv("TERM")))
         print("Test basic colors:")
         cprint("Grey color", "grey")
         cprint("Red color", "red")
@@ -74,8 +71,4 @@ class FuncTest(unittest.TestCase):
 
     def test_stream_has_colors(self):
         # TODO: not a real test. Need to do a proper test.
-        stream_has_colours(sys.stdout)
-
-
-if __name__ == "__main__":
-    unittest.main()
+        assert not stream_has_colours(sys.stdout)
